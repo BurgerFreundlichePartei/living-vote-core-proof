@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "living-vote-core-proof"
+version = "0.1.0"
+description = "Minimal reference implementation proving the Living Vote core via deterministic aggregation and unit tests."
+authors = [
+    "Asterios Raptis asteri.raptis@gmail.com"
+]
+readme = "README.md"
+packages = [{ include = "living_vote" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
