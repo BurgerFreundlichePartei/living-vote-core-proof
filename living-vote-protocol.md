@@ -180,9 +180,7 @@ All implementations MUST remain compatible with it.
 
 ---
 
----
-
-# 📄 `invariants.md`
+# 📄 Initial version of `invariants.md`
 
 ## Living Vote — System Invariants
 
