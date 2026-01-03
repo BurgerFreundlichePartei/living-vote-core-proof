@@ -1,127 +1,233 @@
 # Protocol Compliance — living-vote-core-proof
 
-This document maps the Living Vote Protocol (LVP) specification to the current codebase
-(`living_vote/model.py`, `living_vote/engine.py`) and the unit tests.
+This document maps the **Living Vote Protocol (LVP)** specification and invariants
+to the reference implementation contained in this repository.
+
+This repository represents **Phase A: Core Proof**.
+It proves the logical correctness of the protocol at minimal scale.
+
+---
 
 ## Scope
 
-This repository is a **Phase A proof**. It implements:
-- Political Profiles (minimal data model)
-- State machine (NEUTRAL/DIRECT/DELEGATED/DORMANT)
-- Delegation resolution (including cycle invalidation)
-- Deterministic aggregation
+Implemented and verified in this repository:
+
+- Political Profiles (PP)
+- Profile State Machine
+- Delegation and Delegation Resolution
+- Cycle Safety
+- Deterministic Aggregation
 - Decision Context derivation (non-decision)
+- Identity Binding (domain-level)
+- Ownership Enforcement (domain-level)
 
-Out of scope (by design):
-- Identity management, authentication, cryptography, databases, UI, networking, AI
+Explicitly out of scope:
 
----
-
-## LVP Sections → Implementation Mapping
-
-### 2. Core Definition
-**Spec:** profiles persist and contribute to legitimacy by current state  
-**Code:** `PoliticalProfile` stores persistent state (in-memory for the proof)
-- `living_vote/model.py: PoliticalProfile`
-
-### 3. Fundamental Principles
-1) Persistence
-- **Proof:** profiles exist independent of participation state
-- **Code:** profiles always remain in list; NEUTRAL/DORMANT contribute zero weight
-- **Tests:** `test_*` cover NEUTRAL/DORMANT -> weight 0
-
-2) Configurability
-- **Proof:** profile state and delegation can be changed at any time
-- **Code:** mutable dataclass fields `state`, `delegated_to`, `preference`
-- **Tests:** `test_reversibility_with_withdraw_delegation`
-
-3) Reversibility
-- **Proof:** delegation withdrawal has immediate effect
-- **Code:** state changes affect next aggregation call deterministically
-- **Tests:** `test_reversibility_with_withdraw_delegation`
-
-4) Direct Effect
-- **Proof:** DIRECT profiles contribute weight directly to issue option
-- **Code:** `aggregate_issue()` adds weight for DIRECT preference
-- **File:** `living_vote/engine.py: aggregate_issue`
-
-5) Transparency of Aggregation
-- **Proof:** deterministic totals, winner selection defined and reproducible
-- **Code:** totals computed deterministically; tie-break by issue option order
-- **File:** `living_vote/engine.py: aggregate_issue`
+- Authentication systems
+- Cryptography
+- Persistence layers (DB)
+- User interfaces
+- Networking / APIs
+- AI-based decision making
 
 ---
 
-## 4. Political Profile (PP)
-### 4.3 Minimal Data Model
-**Spec:** `profile_id`, `state`, `delegation`, `configuration`, `history`  
-**Code (Phase A):**
-- Implemented: `profile_id`, `state`, `delegated_to`, `preference` (acts as minimal config for issues)
-- Not implemented (explicitly out of scope): `history`, generalized `configuration`
+## Protocol Sections → Implementation Mapping
 
-**Rationale:** Phase A is proof-of-mechanics. Persistence/history is a later phase.
+### LVP §2 — Core Definition
 
----
+**Spec:** Legitimacy is derived from current profile configuration  
+**Implementation:**
 
-## 5. Profile States
-**Spec:** exactly one state at any time  
-**Code:** `state: State` Enum in `PoliticalProfile`
-- `living_vote/model.py: State`
+- `PoliticalProfile` holds current state and preferences
+- `aggregate_issue()` derives legitimacy deterministically
 
----
+Files:
 
-## 6. Delegation
-### 6.1 Rules
-- Revocable: implemented via state/delegation change
-- Chains: supported through `_resolve_delegation_chain()`
-- Cycles invalid: cycles return `None` → delegated weight not counted
-
-**Code:** `living_vote/engine.py: _resolve_delegation_chain`
-
-**Tests:** `test_cycle_delegation_is_invalid`
+- `living_vote/model.py`
+- `living_vote/engine.py`
 
 ---
 
-## 7. Aggregation
-### 7.1 Deterministic
-**Code:** deterministic loop + deterministic winner selection  
-**Tests:** covered by explicit numeric assertions
+### LVP §3 — Fundamental Principles
 
-### 7.2 Non-Decision Principle
-**Spec:** protocol must not enforce outcomes  
-**Code:** returns `DecisionContext` only; no side effects, no persistence, no enforcement
-- `living_vote/engine.py: DecisionContext`, `aggregate_issue()`
-
----
-
-## 8. Decision Context
-**Spec:** derived signals (winner, margin, close-call)  
-**Code:** `DecisionContext` includes winner, margin, close_call, totals
+| Principle               | Status | Evidence                                                    |
+|-------------------------|--------|-------------------------------------------------------------|
+| Persistence             | ✔      | NEUTRAL/DORMANT profiles persist and contribute zero weight |
+| Configurability         | ✔      | Profile state & preferences mutable via registry            |
+| Reversibility           | ✔      | Delegation withdrawal immediately affects aggregation       |
+| Direct Effect           | ✔      | DIRECT profiles add weight directly                         |
+| Transparent Aggregation | ✔      | Deterministic totals and tie-break rules                    |
 
 ---
 
-## Invariants → Tests Mapping
+## Political Profile (PP)
 
-- I-5 Deterministic Aggregation:
-    - `test_*` asserts exact totals and winner
-- I-4 Reversibility:
-    - `test_reversibility_with_withdraw_delegation`
-- I-7 Cycle Safety:
-    - `test_cycle_delegation_is_invalid`
-- I-8 No Decision Authority:
-    - enforced by design: engine returns context only (no effects)
-- I-2 Persistence:
-    - demonstrated by NEUTRAL/DORMANT contributing 0, not disappearing
+### LVP §4.3 — Minimal Data Model
 
-Note: I-1 (One profile per citizen) and I-3 (Ownership) are out of scope for Phase A,
-because identity/auth are intentionally not implemented. They become testable once
-identity binding exists.
+| Field         | Implemented | Notes                                       |
+|---------------|-------------|---------------------------------------------|
+| profile_id    | ✔           | Unique identifier                           |
+| state         | ✔           | Enum-based state machine                    |
+| delegation    | ✔           | Explicit delegated target                   |
+| configuration | ◐           | Implemented minimally via issue preferences |
+| history       | ✖           | Deferred (not required for Phase A proof)   |
+
+---
+
+## Identity & Ownership (Phase A+)
+
+### Invariant I-1 — One Profile per Citizen
+
+**Status:** ✔ Enforced
+
+**Implementation:**
+
+- `CitizenRegistry` ensures a strict 1:1 mapping:
+
+```
+
+citizen_id → PoliticalProfile
+
+```
+
+- Duplicate profile creation is rejected.
+
+Files:
+
+- `living_vote/registry.py`
+
+Tests:
+
+- `tests/test_identity_binding.py::test_invariant_one_profile_per_citizen`
+
+---
+
+### Invariant I-3 — Ownership / Authorization
+
+**Status:** ✔ Enforced
+
+**Implementation:**
+
+- All profile mutations go through `CitizenRegistry`
+- Only the owning `citizen_id` may:
+- change profile state
+- set preferences
+- create delegation
+
+Unauthorized access raises `AuthorizationError`.
+
+Files:
+
+- `living_vote/registry.py`
+
+Tests:
+
+- `tests/test_identity_binding.py::test_invariant_owner_only_can_update_state`
+- `tests/test_identity_binding.py::test_owner_only_can_set_preference`
+
+---
+
+## Delegation
+
+### LVP §6 — Delegation Rules
+
+**Status:** ✔ Fully implemented
+
+- Explicit delegation only
+- Chains supported
+- Cycles invalidate weight
+- Delegation is revocable at any time
+
+Files:
+
+- `living_vote/engine.py::_resolve_delegation_chain`
+
+Tests:
+
+- `test_cycle_delegation_is_invalid`
+- `test_reversibility_with_withdraw_delegation`
+
+---
+
+## Aggregation
+
+### LVP §7 — Deterministic Aggregation
+
+**Status:** ✔ Verified
+
+- Aggregation is deterministic
+- Given identical inputs, outputs are identical
+- Aggregation does not mutate profile state
+
+Files:
+
+- `living_vote/engine.py::aggregate_issue`
+
+Tests:
+
+- `test_invariant_determinism_same_input_same_output`
+- `test_invariant_no_implicit_transitions`
+
+---
+
+## Decision Context
+
+### LVP §8 — Non-Decision Principle
+
+**Status:** ✔ Enforced by design
+
+- System derives legitimacy signals only
+- No decisions are executed or enforced
+- Output is a pure `DecisionContext`
+
+Files:
+
+- `living_vote/engine.py::DecisionContext`
+
+---
+
+## Invariants Coverage Summary
+
+| Invariant                   | Status                                 |
+|-----------------------------|----------------------------------------|
+| I-1 One Profile per Citizen | ✔                                      |
+| I-2 Persistence             | ✔                                      |
+| I-3 Ownership               | ✔                                      |
+| I-4 Reversibility           | ✔                                      |
+| I-5 Determinism             | ✔                                      |
+| I-6 No Implicit Transitions | ✔                                      |
+| I-7 Cycle Safety            | ✔                                      |
+| I-8 No Decision Authority   | ✔                                      |
+| I-9 Identity Separation     | ◐ (conceptual, no public output layer) |
+| I-10 Protocol Supremacy     | ✔                                      |
+
+---
+
+## Conclusion
+
+The reference implementation is now compliant with the **complete behavioral
+and identity-related core** of the Living Vote Protocol.
+
+What is proven:
+
+- The protocol is internally consistent
+- Identity binding does not break aggregation
+- Ownership enforcement does not require authentication
+- Core legitimacy logic is reproducible and testable
+
+What remains intentionally open:
+
+- Persistence technologies
+- Cryptographic identity
+- Legal embedding
+- Scaling & performance
+- UI / UX
 
 ---
 
 ## Status
 
-This repository is compliant with the **behavioral core** of LVP:
-- states, delegation, aggregation, determinism, non-decision
+**Phase A: COMPLETE**
 
-Identity binding, persistence layers, and security constraints are explicitly deferred.
+This repository now constitutes a **full core proof** of the Living Vote Protocol.
